@@ -8,7 +8,7 @@ set -u
 NUMFILES=10
 WRITESTR=AELD_IS_FUN
 WRITEDIR=/tmp/aeld-data
-WRITER="./writer"  # Path to compiled writer application
+WRITER="./writer"  # Assumes binary is already compiled
 username=$(cat conf/username.txt)
 
 if [ $# -lt 3 ]
@@ -32,7 +32,6 @@ echo "Writing ${NUMFILES} files containing string ${WRITESTR} to ${WRITEDIR}"
 
 rm -rf "${WRITEDIR}"
 
-# Create WRITEDIR if not assignment1
 assignment=$(cat ../conf/assignment.txt)
 
 if [ "$assignment" != "assignment1" ]
@@ -47,12 +46,7 @@ then
     fi
 fi
 
-# Remove old writer binary and compile as a native application
-echo "Compiling writer application..."
-make clean
-make
-
-# Write files using writer instead of writer.sh
+# Write files using compiled writer
 for i in $(seq 1 $NUMFILES)
 do
     $WRITER "$WRITEDIR/${username}$i.txt" "$WRITESTR"

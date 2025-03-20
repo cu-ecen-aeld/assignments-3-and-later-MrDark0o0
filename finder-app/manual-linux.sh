@@ -111,6 +111,9 @@ sudo cp -p -R finder-test.sh $OUTDIR/rootfs/home
 sudo cp -p -R conf/ $OUTDIR/rootfs/home/conf
 sed -i 's|\.\./conf|conf|g' ${OUTDIR}/rootfs/home/finder-test.sh
 
+sudo chmod +x $OUTDIR/rootfs/home/finder.sh
+sudo chmod +x $OUTDIR/rootfs/home/finder-test.sh
+
 cp autorun-qemu.sh ${OUTDIR}/rootfs/home/
 
 #####################

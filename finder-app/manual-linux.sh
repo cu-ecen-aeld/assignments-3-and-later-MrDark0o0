@@ -104,7 +104,11 @@ cp writer ${OUTDIR}/rootfs/home/
 #####################
 # COPY OTHER FILES
 #####################
-cp -r finder.sh finder-test.sh conf ${OUTDIR}/rootfs/home/
+sudo cp -p -R autorun-qemu.sh $OUTDIR/rootfs/home
+sudo cp -p -R writer $OUTDIR/rootfs/home
+sudo cp -p -R finder.sh $OUTDIR/rootfs/home
+sudo cp -p -R finder-test.sh $OUTDIR/rootfs/home
+sudo cp -p -R conf/ $OUTDIR/rootfs/home/conf
 sed -i 's|\.\./conf|conf|g' ${OUTDIR}/rootfs/home/finder-test.sh
 
 cp autorun-qemu.sh ${OUTDIR}/rootfs/home/

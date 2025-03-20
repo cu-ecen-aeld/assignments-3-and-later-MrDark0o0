@@ -1,6 +1,6 @@
 #!/bin/bash
-# Script outline to install and build kernel.
-# Author: Siddhant Jajoo.
+# Author: Siddhant Jajoo
+# Modified by: [Your Name]
 
 set -e
 set -u
@@ -13,68 +13,119 @@ FINDER_APP_DIR=$(realpath $(dirname $0))
 ARCH=arm64
 CROSS_COMPILE=aarch64-none-linux-gnu-
 
-if [ $# -lt 1 ]
-then
-	echo "Using default directory ${OUTDIR} for output"
+if [ $# -ge 1 ]; then
+    OUTDIR=$1
+    echo "Using provided output directory: ${OUTDIR}"
 else
-	OUTDIR=$1
-	echo "Using passed directory ${OUTDIR} for output"
+    echo "Using default output directory: ${OUTDIR}"
 fi
 
-mkdir -p ${OUTDIR}
+mkdir -p ${OUTDIR} || { echo "Failed to create ${OUTDIR}"; exit 1; }
 
-cd "$OUTDIR"
+cd ${OUTDIR}
+
+#####################
+# KERNEL BUILD
+#####################
 if [ ! -d "${OUTDIR}/linux-stable" ]; then
-    #Clone only if the repository does not exist.
-	echo "CLONING GIT LINUX STABLE VERSION ${KERNEL_VERSION} IN ${OUTDIR}"
-	git clone ${KERNEL_REPO} --depth 1 --single-branch --branch ${KERNEL_VERSION}
+    echo "Cloning Linux kernel ${KERNEL_VERSION}"
+    git clone ${KERNEL_REPO} --depth 1 --single-branch --branch ${KERNEL_VERSION}
 fi
+
 if [ ! -e ${OUTDIR}/linux-stable/arch/${ARCH}/boot/Image ]; then
     cd linux-stable
-    echo "Checking out version ${KERNEL_VERSION}"
-    git checkout ${KERNEL_VERSION}
-
-    # TODO: Add your kernel build steps here
+    echo "Building Linux kernel..."
+    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} mrproper
+    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} defconfig
+    make -j$(nproc) ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} all
+    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} modules
+    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} dtbs
 fi
 
-echo "Adding the Image in outdir"
+echo "Kernel Image built successfully."
+cp ${OUTDIR}/linux-stable/arch/${ARCH}/boot/Image ${OUTDIR}/
 
-echo "Creating the staging directory for the root filesystem"
-cd "$OUTDIR"
-if [ -d "${OUTDIR}/rootfs" ]
-then
-	echo "Deleting rootfs directory at ${OUTDIR}/rootfs and starting over"
-    sudo rm  -rf ${OUTDIR}/rootfs
+#####################
+# ROOTFS SETUP
+#####################
+cd ${OUTDIR}
+echo "Creating rootfs..."
+
+if [ -d "${OUTDIR}/rootfs" ]; then
+    sudo rm -rf ${OUTDIR}/rootfs
 fi
 
-# TODO: Create necessary base directories
+mkdir -p rootfs/{bin,sbin,etc,proc,sys,usr/{bin,sbin},lib,lib64,dev,home,tmp,var,run}
+mkdir -p rootfs/lib/modules
+mkdir -p rootfs/etc/init.d
 
-cd "$OUTDIR"
-if [ ! -d "${OUTDIR}/busybox" ]
-then
-git clone git://busybox.net/busybox.git
+#####################
+# BUSYBOX SETUP
+#####################
+if [ ! -d "${OUTDIR}/busybox" ]; then
+    git clone git://busybox.net/busybox.git
     cd busybox
     git checkout ${BUSYBOX_VERSION}
-    # TODO:  Configure busybox
 else
     cd busybox
 fi
 
-# TODO: Make and install busybox
+make distclean
+make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} defconfig
+make -j$(nproc) ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE}
+make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} CONFIG_PREFIX=${OUTDIR}/rootfs install
 
-echo "Library dependencies"
-${CROSS_COMPILE}readelf -a bin/busybox | grep "program interpreter"
-${CROSS_COMPILE}readelf -a bin/busybox | grep "Shared library"
+#####################
+# LIBRARY DEPENDENCIES
+#####################
+SYSROOT=$(${CROSS_COMPILE}gcc -print-sysroot)
 
-# TODO: Add library dependencies to rootfs
+cp -a ${SYSROOT}/lib/ld-linux-aarch64.so.1 ${OUTDIR}/rootfs/lib/
+cp -a ${SYSROOT}/lib64/libm.so.6 ${OUTDIR}/rootfs/lib64/
+cp -a ${SYSROOT}/lib64/libresolv.so.2 ${OUTDIR}/rootfs/lib64/
+cp -a ${SYSROOT}/lib64/libc.so.6 ${OUTDIR}/rootfs/lib64/
 
-# TODO: Make device nodes
+#####################
+# DEVICE NODES
+#####################
+sudo mknod -m 666 ${OUTDIR}/rootfs/dev/null c 1 3
+sudo mknod -m 622 ${OUTDIR}/rootfs/dev/console c 5 1
 
-# TODO: Clean and build the writer utility
+#####################
+# WRITER APP BUILD
+#####################
+cd ${FINDER_APP_DIR}
+make clean
+make CROSS_COMPILE=${CROSS_COMPILE}
 
-# TODO: Copy the finder related scripts and executables to the /home directory
-# on the target rootfs
+mkdir -p ${OUTDIR}/rootfs/home
+cp writer ${OUTDIR}/rootfs/home/
 
-# TODO: Chown the root directory
+#####################
+# COPY OTHER FILES
+#####################
+cp -r finder.sh finder-test.sh conf ${OUTDIR}/rootfs/home/
+sed -i 's|\.\./conf|conf|g' ${OUTDIR}/rootfs/home/finder-test.sh
 
-# TODO: Create initramfs.cpio.gz
+cp autorun-qemu.sh ${OUTDIR}/rootfs/home/
+
+#####################
+# INIT SCRIPT
+#####################
+cat << EOF | sudo tee ${OUTDIR}/rootfs/etc/init.d/rcS
+#!/bin/sh
+mount -t proc none /proc
+mount -t sysfs none /sys
+/home/finder-test.sh
+EOF
+sudo chmod +x ${OUTDIR}/rootfs/etc/init.d/rcS
+
+#####################
+# FINALIZING INITRAMFS
+#####################
+cd ${OUTDIR}/rootfs
+sudo chown -R root:root *
+find . | cpio -H newc -ov --owner root:root | gzip > ${OUTDIR}/initramfs.cpio.gz
+
+echo "All done. Kernel and initramfs built in ${OUTDIR}"
+

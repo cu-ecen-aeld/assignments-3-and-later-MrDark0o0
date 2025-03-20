@@ -1,3 +1,1 @@
-git add .github/workflows/github-actions.yml
-git add CMakeLists.txt
-git add conf/assignment.txt
+assignment3
